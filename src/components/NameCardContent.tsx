@@ -7,7 +7,7 @@ export function GenderDot({ gender, size = 10 }: { gender: Gender; size?: number
 
 /** One body for the swipe card and the detail overlay, so they can't drift apart. */
 export function NameCardContent({ cluster }: { cluster: Cluster }) {
-  const alts = altSpellings(cluster).slice(0, 6);
+  const alts = altSpellings(cluster).slice(0, 8);
   const pop = popularityLabel(cluster);
   const origin = displayOrigin(cluster);
   return (

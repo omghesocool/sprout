@@ -60,3 +60,8 @@ export const PlusIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M12 5v14M5 12h14" />
   </Icon>
 );
+export const StarIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.9 6.8 19.7l1-5.9L3.5 9.7l5.9-.8z" />
+  </Icon>
+);

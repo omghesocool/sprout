@@ -15,6 +15,7 @@ import {
   DEFAULT_FILTERS,
   cleanCodeInput,
   combineRankings,
+  computePickStats,
   customNameId,
   customToCluster,
   filtersMatch,
@@ -26,10 +27,11 @@ import {
   type RankedItem,
 } from "./domain";
 import { ensureSignedIn, isFirebaseConfigured } from "./firebase";
+import { playMatchSound, unlockAudio } from "./sound";
 import * as sync from "./sync";
 import type { Cluster, CustomRecord, Filters, NamesFile, SwipeRecord } from "./types";
 
-export type Tab = "swipe" | "matches" | "ranking" | "settings";
+export type Tab = "swipe" | "matches" | "ranking" | "mine" | "settings";
 export type PairingMode = "choose" | "create" | "join";
 
 const STORAGE_KEY = "sprout:v1";
@@ -48,6 +50,10 @@ interface Persisted {
   lastSyncMs: number | null;
   /** Names the couple typed in, keyed by cluster ID. */
   customNames: Record<string, CustomRecord>;
+  /** True once this person has been through (or skipped) the first-run setup screen. */
+  onboarded: boolean;
+  /** Play the celebration sound on a match. */
+  soundOn: boolean;
 }
 
 const EMPTY: Persisted = {
@@ -61,6 +67,8 @@ const EMPTY: Persisted = {
   dark: null,
   lastSyncMs: null,
   customNames: {},
+  onboarded: false,
+  soundOn: true,
 };
 
 function loadPersisted(): Persisted {
@@ -68,7 +76,15 @@ function loadPersisted(): Persisted {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return EMPTY;
     const parsed = JSON.parse(raw) as Partial<Persisted>;
-    return { ...EMPTY, ...parsed, filters: { ...DEFAULT_FILTERS, ...parsed.filters } };
+    const filters = { ...DEFAULT_FILTERS, ...parsed.filters };
+    if (!Array.isArray(filters.syllables)) filters.syllables = []; // older saves had a letter-length filter
+    return {
+      ...EMPTY,
+      ...parsed,
+      filters,
+      // Anyone who was already swiping before the setup screen existed skips it.
+      onboarded: parsed.onboarded ?? Object.keys(parsed.swipes ?? {}).length > 0,
+    };
   } catch {
     return EMPTY;
   }
@@ -139,10 +155,17 @@ export interface Sprout {
   dismissCelebration: () => void;
   toast: string | null;
 
-  // filters
+  // filters + first-run setup
   filters: Filters;
   allOrigins: string[];
-  lengthBounds: { min: number; max: number };
+  originCounts: { origin: string; count: number }[];
+  countMatching: (filters: Filters) => number;
+  showSetup: boolean;
+  /** True while the setup screen is the very first one (so Skip, not Cancel). */
+  firstRun: boolean;
+  openSetup: () => void;
+  finishSetup: (filters: Filters) => void;
+  skipSetup: () => void;
   updateFilters: (patch: Partial<Filters>) => void;
   resetFilters: () => void;
   showFilters: boolean;
@@ -157,6 +180,12 @@ export interface Sprout {
   openDetail: (id: number) => void;
   closeDetail: () => void;
 
+  // my own picks
+  likedList: Cluster[];
+  passedList: Cluster[];
+  pickStats: ReturnType<typeof computePickStats>;
+  changeSwipe: (clusterId: number, liked: boolean) => void;
+
   // names people add themselves
   showAddName: boolean;
   setShowAddName: (show: boolean) => void;
@@ -168,6 +197,8 @@ export interface Sprout {
   // settings
   isDark: boolean;
   toggleDark: () => void;
+  soundOn: boolean;
+  toggleSound: () => void;
   leavePairing: () => void;
   lastSyncMs: number | null;
   unsyncedCount: number;
@@ -197,6 +228,7 @@ export function SproutProvider({ children }: { children: ReactNode }) {
   const [pairing, setPairing] = useState<PairingState>(INITIAL_PAIRING);
   const [showFilters, setShowFilters] = useState(false);
   const [showAddName, setShowAddName] = useState(false);
+  const [setupReopened, setSetupReopened] = useState(false);
   const [celebration, setCelebration] = useState<Cluster | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -223,6 +255,14 @@ export function SproutProvider({ children }: { children: ReactNode }) {
     const onChange = (e: MediaQueryListEvent) => setSystemDark(e.matches);
     media.addEventListener("change", onChange);
 
+    const unlock = () => {
+      unlockAudio();
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+    window.addEventListener("pointerdown", unlock);
+    window.addEventListener("keydown", unlock);
+
     let cancelled = false;
     fetch("/names.json")
       .then((r) => {
@@ -234,6 +274,8 @@ export function SproutProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
       media.removeEventListener("change", onChange);
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
     };
   }, []);
 
@@ -250,6 +292,10 @@ export function SproutProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.dataset.theme = isDark ? "dark" : "light";
   }, [isDark]);
+
+  useEffect(() => {
+    if (celebration && pRef.current.soundOn) playMatchSound();
+  }, [celebration]);
 
   useEffect(() => {
     if (!toast) return;
@@ -290,7 +336,12 @@ export function SproutProvider({ children }: { children: ReactNode }) {
       for (const id of fresh) void sync.pushMatch(coupleId, id, Date.now());
       if (fresh.length > 0) {
         const first = namesRef.current?.find((c) => c.id === fresh[0]);
-        setToast(first ? `💛 New match: ${first.name}` : "💛 New match!");
+        if (first && document.visibilityState === "visible") {
+          setCelebration((open) => open ?? first);
+          if (fresh.length > 1) setToast(`💛 ${fresh.length - 1} more new match${fresh.length > 2 ? "es" : ""}`);
+        } else {
+          setToast(first ? `💛 You've got a match: ${first.name}` : "💛 You've got a match!");
+        }
       }
       setP((s) => ({ ...s, partnerLikes: ids, lastSyncMs: Date.now() }));
     });
@@ -389,9 +440,15 @@ export function SproutProvider({ children }: { children: ReactNode }) {
     () => [...new Set((allNames ?? []).flatMap((c) => c.origins))].sort((a, b) => a.localeCompare(b)),
     [allNames],
   );
-  const lengthBounds = useMemo(() => {
-    const lengths = (allNames ?? []).map((c) => c.name.length);
-    return lengths.length ? { min: Math.min(...lengths), max: Math.max(...lengths) } : { min: 2, max: 12 };
+  const originCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const c of allNames ?? []) {
+      const origin = c.origins[0];
+      if (origin && origin !== "Unknown") counts.set(origin, (counts.get(origin) ?? 0) + 1);
+    }
+    return [...counts]
+      .map(([origin, count]) => ({ origin, count }))
+      .sort((a, b) => b.count - a.count || a.origin.localeCompare(b.origin));
   }, [allNames]);
   const maxTier = useMemo(
     () => Math.max(p.unlockedTier, ...(allNames ?? []).map((c) => c.tier), 1),
@@ -408,6 +465,22 @@ export function SproutProvider({ children }: { children: ReactNode }) {
       nextTierCount: sortedNames.filter((c) => c.tier === p.unlockedTier + 1 && filtersMatch(p.filters, c)).length,
     };
   }, [sortedNames, p.unlockedTier, p.filters, p.swipes]);
+
+  const countMatching = useCallback(
+    (f: Filters) => sortedNames.filter((c) => c.tier <= p.unlockedTier && filtersMatch(f, c)).length,
+    [sortedNames, p.unlockedTier],
+  );
+
+  const { likedList, passedList } = useMemo(() => {
+    const liked: Cluster[] = [];
+    const passed: Cluster[] = [];
+    for (const [id, rec] of Object.entries(p.swipes).sort((a, b) => b[1].ts - a[1].ts)) {
+      const cluster = byId.get(Number(id));
+      if (cluster) (rec.liked ? liked : passed).push(cluster);
+    }
+    return { likedList: liked, passedList: passed };
+  }, [p.swipes, byId]);
+  const pickStats = useMemo(() => computePickStats(likedList, passedList), [likedList, passedList]);
 
   const matchIds = useMemo(() => {
     const partner = new Set(p.partnerLikes);
@@ -474,6 +547,39 @@ export function SproutProvider({ children }: { children: ReactNode }) {
     },
     [],
   );
+
+  /** Change my mind about a name I've already swiped (from the My names screen). */
+  const changeSwipe = useCallback((clusterId: number, liked: boolean) => {
+    const cur = pRef.current;
+    const existing = cur.swipes[String(clusterId)];
+    if (!cur.coupleId || !existing || existing.liked === liked) return;
+    const code = cur.coupleId;
+    const ts = Date.now();
+    const partnerLiked = cur.partnerLikes.includes(clusterId);
+    setP((s) => ({
+      ...s,
+      swipes: { ...s.swipes, [clusterId]: { liked, ts, synced: false } },
+      myRanking: liked ? s.myRanking : s.myRanking.filter((id) => id !== clusterId),
+    }));
+    if (liked && partnerLiked) {
+      const cluster = namesRef.current?.find((c) => c.id === clusterId);
+      if (cluster) setCelebration(cluster);
+      void sync.pushMatch(code, clusterId, ts);
+    } else if (!liked && partnerLiked) {
+      void sync.deleteMatch(code, clusterId);
+    }
+    const uid = userIdRef.current;
+    if (uid) {
+      void sync.pushSwipe(code, uid, clusterId, liked, ts).then((ok) => {
+        if (!ok) return;
+        setP((s) => {
+          const rec = s.swipes[String(clusterId)];
+          if (!rec || rec.ts !== ts) return s;
+          return { ...s, swipes: { ...s.swipes, [clusterId]: { ...rec, synced: true } }, lastSyncMs: Date.now() };
+        });
+      });
+    }
+  }, []);
 
   const undo = useCallback(() => {
     const cur = pRef.current;
@@ -551,6 +657,16 @@ export function SproutProvider({ children }: { children: ReactNode }) {
   const unlockNextTier = useCallback(() => setP((s) => ({ ...s, unlockedTier: s.unlockedTier + 1 })), []);
   const updateFilters = useCallback((patch: Partial<Filters>) => setP((s) => ({ ...s, filters: { ...s.filters, ...patch } })), []);
   const resetFilters = useCallback(() => setP((s) => ({ ...s, filters: DEFAULT_FILTERS })), []);
+  const openSetup = useCallback(() => setSetupReopened(true), []);
+  const finishSetup = useCallback((filters: Filters) => {
+    setP((s) => ({ ...s, filters, onboarded: true }));
+    setSetupReopened(false);
+  }, []);
+  const skipSetup = useCallback(() => {
+    setP((s) => ({ ...s, onboarded: true }));
+    setSetupReopened(false);
+  }, []);
+  const toggleSound = useCallback(() => setP((s) => ({ ...s, soundOn: !s.soundOn })), []);
   const toggleDark = useCallback(() => setP((s) => ({ ...s, dark: !(s.dark ?? systemDark) })), [systemDark]);
 
   // pairing
@@ -614,6 +730,7 @@ export function SproutProvider({ children }: { children: ReactNode }) {
     setPartnerId(null);
     setUndoStack([]);
     setTab("swipe");
+    setSetupReopened(false);
     setPairing(INITIAL_PAIRING);
   }, []);
 
@@ -647,7 +764,13 @@ export function SproutProvider({ children }: { children: ReactNode }) {
     toast,
     filters: p.filters,
     allOrigins,
-    lengthBounds,
+    originCounts,
+    countMatching,
+    showSetup: inApp && Boolean(p.coupleId) && (!p.onboarded || setupReopened),
+    firstRun: !p.onboarded,
+    openSetup,
+    finishSetup,
+    skipSetup,
     updateFilters,
     resetFilters,
     showFilters,
@@ -659,6 +782,10 @@ export function SproutProvider({ children }: { children: ReactNode }) {
     detail: detailId !== null ? (byId.get(detailId) ?? null) : null,
     openDetail: setDetailId,
     closeDetail: () => setDetailId(null),
+    likedList,
+    passedList,
+    pickStats,
+    changeSwipe,
     showAddName,
     setShowAddName,
     addCustomName,
@@ -666,6 +793,8 @@ export function SproutProvider({ children }: { children: ReactNode }) {
     customList,
     isDark,
     toggleDark,
+    soundOn: p.soundOn,
+    toggleSound,
     leavePairing,
     lastSyncMs: p.lastSyncMs,
     unsyncedCount,

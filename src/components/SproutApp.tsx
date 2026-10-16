@@ -1,15 +1,18 @@
 "use client";
 
+import { useMemo } from "react";
 import { SproutProvider, useSprout, type Tab } from "@/lib/store";
 import { AddNameSheet } from "./AddNameSheet";
 import { FilterSheet } from "./FilterSheet";
-import { GridIcon, HeartIcon, ListIcon, SettingsIcon } from "./icons";
+import { GridIcon, HeartIcon, ListIcon, SettingsIcon, StarIcon } from "./icons";
 import { MatchesScreen } from "./MatchesScreen";
+import { MyNamesScreen } from "./MyNamesScreen";
 import { Modal } from "./Modal";
 import { NameCardContent } from "./NameCardContent";
 import { Pairing } from "./Pairing";
 import { RankingScreen } from "./RankingScreen";
 import { SettingsScreen } from "./SettingsScreen";
+import { Setup } from "./Setup";
 import { SwipeScreen } from "./SwipeScreen";
 
 export function SproutApp() {
@@ -47,6 +50,7 @@ function Body() {
   }
 
   if (!s.inApp) return <Pairing />;
+  if (s.showSetup) return <Setup />;
 
   return (
     <>
@@ -54,6 +58,7 @@ function Body() {
         {s.tab === "swipe" && <SwipeScreen />}
         {s.tab === "matches" && <MatchesScreen />}
         {s.tab === "ranking" && <RankingScreen />}
+        {s.tab === "mine" && <MyNamesScreen />}
         {s.tab === "settings" && <SettingsScreen />}
       </main>
       <TabBar />
@@ -80,13 +85,53 @@ function Body() {
   );
 }
 
+const CONFETTI_COLOURS = ["var(--primary)", "var(--peach)", "var(--like)", "#f2c94c", "var(--reject)"];
+
+/** A burst of paper confetti; purely decorative, and still under prefers-reduced-motion. */
+function Confetti() {
+  const pieces = useMemo(
+    () =>
+      Array.from({ length: 36 }, (_, i) => ({
+        left: Math.random() * 100,
+        delay: Math.random() * 0.5,
+        duration: 2.2 + Math.random() * 1.6,
+        drift: (Math.random() - 0.5) * 160,
+        spin: 360 + Math.random() * 540,
+        colour: CONFETTI_COLOURS[i % CONFETTI_COLOURS.length],
+        round: i % 3 === 0,
+      })),
+    [],
+  );
+  return (
+    <div className="confetti" aria-hidden="true">
+      {pieces.map((p, i) => (
+        <span
+          key={i}
+          style={
+            {
+              left: `${p.left}%`,
+              background: p.colour,
+              borderRadius: p.round ? "50%" : "2px",
+              animationDelay: `${p.delay}s`,
+              animationDuration: `${p.duration}s`,
+              "--drift": `${p.drift}px`,
+              "--spin": `${p.spin}deg`,
+            } as React.CSSProperties
+          }
+        />
+      ))}
+    </div>
+  );
+}
+
 function Celebration() {
   const s = useSprout();
   const cluster = s.celebration!;
   return (
-    <Modal label="It's a match!" variant="dialog" onClose={s.dismissCelebration}>
-      <div className="emoji" style={{ fontSize: 44 }}>🎉</div>
-      <h2 className="title">It&apos;s a match!</h2>
+    <Modal label="You've got a match!" variant="dialog" onClose={s.dismissCelebration}>
+      <Confetti />
+      <div className="emoji" style={{ fontSize: 48 }}>🎉</div>
+      <h2 className="title" style={{ fontSize: 28 }}>You&apos;ve got a match!</h2>
       <div className="card-name">{cluster.name}</div>
       <p className="muted" style={{ margin: 0 }}>You both liked this one. It&apos;s in your matches now.</p>
       <button className="btn block" onClick={s.dismissCelebration}>
@@ -109,6 +154,7 @@ const TABS: { id: Tab; label: string; Icon: typeof HeartIcon }[] = [
   { id: "swipe", label: "Swipe", Icon: HeartIcon },
   { id: "matches", label: "Matches", Icon: GridIcon },
   { id: "ranking", label: "Ranking", Icon: ListIcon },
+  { id: "mine", label: "My names", Icon: StarIcon },
   { id: "settings", label: "Settings", Icon: SettingsIcon },
 ];
 

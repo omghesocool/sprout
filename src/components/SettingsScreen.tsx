@@ -65,6 +65,24 @@ export function SettingsScreen() {
 
         <div className="setting">
           <div>
+            <h3>Name preferences</h3>
+            <div className="muted">Boys, girls or both, origins and syllables.</div>
+          </div>
+          <button className="btn secondary" style={{ minHeight: 40, padding: "0 18px" }} onClick={s.openSetup}>
+            Edit
+          </button>
+        </div>
+
+        <div className="setting">
+          <div>
+            <h3>Match sound</h3>
+            <div className="muted">A little fanfare when you both like a name.</div>
+          </div>
+          <button className="switch" role="switch" aria-checked={s.soundOn} aria-label="Match sound" onClick={s.toggleSound} />
+        </div>
+
+        <div className="setting">
+          <div>
             <h3>Dark mode</h3>
             <div className="muted">Easier on the eyes for late-night swiping.</div>
           </div>

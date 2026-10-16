@@ -15,6 +15,8 @@ export interface Cluster {
   etymology: string | null;
   origins: string[];
   tier: number;
+  /** How many syllables the name has (used by the syllable filter). */
+  syllables: number;
   /** Includes `name` itself, first. */
   variants: string[];
   nzRank: number | null;
@@ -44,9 +46,8 @@ export const POPULARITY_BANDS: { id: PopularityBand; label: string; maxRank: num
 export interface Filters {
   genders: Gender[];
   origins: string[];
-  /** null = no limit, so names added to the list later are never silently hidden. */
-  lengthMin: number | null;
-  lengthMax: number | null;
+  /** Syllable counts to include; 4 means "4 or more". Empty = any. */
+  syllables: number[];
   popularity: PopularityBand;
 }
 

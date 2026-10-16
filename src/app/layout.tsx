@@ -8,6 +8,8 @@ const body = Nunito({ subsets: ["latin"], weight: ["400", "600", "700", "800"], 
 export const metadata: Metadata = {
   title: "Sprout — baby names for two",
   description: "Swipe on baby names with your partner and see where you match.",
+  applicationName: "Sprout",
+  appleWebApp: { capable: true, title: "Sprout", statusBarStyle: "default" },
   robots: { index: false, follow: false }, // a private two-person app, not something for search results
 };
 

@@ -28,6 +28,18 @@ six-character couple code.
 
 `names.json` is the only thing that changes when you change names; no code edits.
 
+## What's in the app
+
+- **First-run setup**: boys, girls or both (optionally including gender-neutral names), favourite
+  origins and syllable counts. Editable any time from Settings → Name preferences.
+- **Swipe** with a drag, the buttons, or ← / → (Z undoes). Filters: gender, origin, syllables, popularity.
+- **Matches** with a "You've got a match!" screen, confetti and a short synthesised fanfare (no audio
+  file; Settings → Match sound turns it off). The fanfare follows your phone's silent switch.
+- **My names**: everything you've liked and passed (tap *Pass* / *Like* to change your mind), plus stats
+  on the genders, origins and syllable counts of the names you like.
+- **Ranking** your matches, and comparing with your partner's.
+- Installable: *Add to Home Screen* gives it the Sprout icon and a full-screen window.
+
 ## Adding your own names
 
 Either partner can tap **+** on the Swipe screen (or *Add a name* in Settings) to type in a

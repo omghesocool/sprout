@@ -3,10 +3,14 @@ import { type Cluster, type CustomName, type Filters, type Gender, POPULARITY_BA
 export const DEFAULT_FILTERS: Filters = {
   genders: [],
   origins: [],
-  lengthMin: null,
-  lengthMax: null,
+  syllables: [],
   popularity: "any",
 };
+
+/** The syllable filter offers 1, 2, 3 and "4+". */
+export const SYLLABLE_OPTIONS = [1, 2, 3, 4] as const;
+export const syllableLabel = (n: number) => (n >= 4 ? "4+" : String(n));
+const syllableBucket = (n: number) => Math.min(Math.max(n, 1), 4);
 
 export function popularityLabel(c: Cluster): string | null {
   if (c.nzRank != null && c.nzYear != null) return `NZ #${c.nzRank} in ${c.nzYear}`;
@@ -27,9 +31,7 @@ export function altSpellings(c: Cluster): string[] {
 export function filtersMatch(f: Filters, c: Cluster): boolean {
   if (f.genders.length > 0 && !f.genders.includes(c.gender)) return false;
   if (f.origins.length > 0 && !c.origins.some((o) => f.origins.includes(o))) return false;
-  const length = c.name.length;
-  if (f.lengthMin != null && length < f.lengthMin) return false;
-  if (f.lengthMax != null && length > f.lengthMax) return false;
+  if (f.syllables.length > 0 && !f.syllables.includes(syllableBucket(c.syllables))) return false;
   const cap = POPULARITY_BANDS.find((b) => b.id === f.popularity)?.maxRank ?? null;
   if (cap != null) {
     const best = c.nzRank ?? c.usRank;
@@ -182,11 +184,146 @@ export function customToCluster(c: CustomName, myUid: string | null): Cluster {
     etymology: null,
     origins: [c.origin || "Unknown"],
     tier: 1,
+    syllables: estimateSyllables(c.name, c.origin ? [c.origin] : []),
     variants: [c.name],
     nzRank: null,
     nzYear: null,
     usRank: null,
     pop: 1,
     addedBy: c.addedBy === myUid ? "me" : "partner",
+  };
+}
+
+// ---- syllables ----
+
+const EVERY_VOWEL_ORIGINS = new Set(["Māori", "Pacific", "Hawaiian"]);
+const MAORI_DIPHTHONGS = new Set(["ae", "ai", "ao", "au", "ei", "eu", "oi", "ou"]);
+const HIATUS = new Set(["ia", "io", "iu", "ua", "uo", "eo", "oe"]);
+
+function groupEveryVowel(group: string): number {
+  let count = 0;
+  for (let i = 0; i < group.length; ) {
+    count++;
+    i += MAORI_DIPHTHONGS.has(group.slice(i, i + 2)) ? 2 : 1;
+  }
+  return count;
+}
+
+function groupEnglish(group: string, atEnd: boolean, prev: string): number {
+  let count = 1;
+  for (let i = 0; i < group.length - 1; i++) {
+    const pair = group[i] + group[i + 1];
+    if (HIATUS.has(pair)) count++;
+    else if (pair === "ie" && !(atEnd && i === group.length - 2)) count++; // Daniel, Gabriel; not Annie
+    else if (pair === "ui" && !["q", "g"].includes(i > 0 ? group[i - 1] : prev)) count++; // Luisa; not Quinn
+    else if ((pair === "ea" || pair === "oa") && atEnd && group.length === 2) count++; // Andrea, Noa
+  }
+  return count;
+}
+
+/**
+ * Rule-based syllable count for a given name — the same rules as names-etl's `estimate_syllables`,
+ * used for names people type in themselves. Approximate by design (it only feeds a 1 / 2 / 3 / 4+
+ * filter), so the built-in list's counts were checked by hand instead.
+ */
+export function estimateSyllables(word: string, origins: readonly string[] = []): number {
+  const lower = word.trim().toLowerCase();
+  if (!lower) return 0;
+  const parts = lower.split(/[\s\-'’]+/).filter(Boolean);
+  if (parts.length > 1) return parts.reduce((sum, p) => sum + estimateSyllables(p, origins), 0);
+
+  const everyVowel = origins.length > 0 && EVERY_VOWEL_ORIGINS.has(origins[0]);
+  const chars = lower.normalize("NFKD").replace(/\p{M}/gu, "").split("");
+  // y is a consonant at the start of a word or between vowels (Yara, Maya), otherwise a vowel.
+  chars.forEach((c, i) => {
+    if (c !== "y") return;
+    const before = i > 0 && "aeiou".includes(chars[i - 1]);
+    const after = i + 1 < chars.length && "aeiou".includes(chars[i + 1]);
+    if ((i === 0 && after) || (before && after)) chars[i] = "ʏ";
+  });
+  const plain = chars.join("");
+
+  let count = 0;
+  for (const m of plain.matchAll(/[aeiouy]+/g)) {
+    const start = m.index ?? 0;
+    const group = m[0];
+    count += everyVowel
+      ? groupEveryVowel(group)
+      : groupEnglish(group, start + group.length === plain.length, start > 0 ? plain[start - 1] : "");
+  }
+  if (!everyVowel && count > 1 && plain.endsWith("e") && !"aeiouy".includes(plain[plain.length - 2])) {
+    const syllabicLe = plain.length > 2 && plain.endsWith("le") && !"aeiouyl".includes(plain[plain.length - 3]);
+    if (!syllabicLe) count--; // silent final e (Kate, Claire, Isabelle)
+  }
+  return Math.max(count, 1);
+}
+
+// ---- name preferences (the setup screen) ----
+
+export type GenderPref = "boy" | "girl" | "both";
+
+/** Boys / Girls pick that gender's names plus, optionally, the gender-neutral ones. Both = no filter. */
+export function gendersFor(pref: GenderPref, includeNeutral: boolean): Gender[] {
+  if (pref === "both") return [];
+  const own: Gender = pref === "boy" ? "M" : "F";
+  return includeNeutral ? [own, "N"] : [own];
+}
+
+export function genderPrefOf(f: Filters): { pref: GenderPref; neutral: boolean } {
+  const hasM = f.genders.includes("M");
+  const hasF = f.genders.includes("F");
+  if (hasM && !hasF) return { pref: "boy", neutral: f.genders.includes("N") };
+  if (hasF && !hasM) return { pref: "girl", neutral: f.genders.includes("N") };
+  return { pref: "both", neutral: true };
+}
+
+// ---- "my names" statistics ----
+
+export interface OriginStat {
+  origin: string;
+  liked: number;
+  seen: number;
+}
+
+export interface PickStats {
+  liked: number;
+  passed: number;
+  /** Share of names seen that were liked, 0-1 (null before the first swipe). */
+  likeRate: number | null;
+  likedByGender: Record<Gender, number>;
+  likedOrigins: OriginStat[];
+  likedSyllables: { label: string; count: number }[];
+}
+
+export function computePickStats(liked: Cluster[], passed: Cluster[], maxOrigins = 8): PickStats {
+  const likedByGender: Record<Gender, number> = { M: 0, F: 0, N: 0 };
+  const origins = new Map<string, OriginStat>();
+  const bump = (c: Cluster, isLike: boolean) => {
+    const origin = displayOrigin(c) ?? "Not specified";
+    const stat = origins.get(origin) ?? { origin, liked: 0, seen: 0 };
+    stat.seen++;
+    if (isLike) stat.liked++;
+    origins.set(origin, stat);
+  };
+  const syllableCounts = new Map<number, number>();
+  for (const c of liked) {
+    likedByGender[c.gender]++;
+    bump(c, true);
+    const bucket = syllableBucket(c.syllables);
+    syllableCounts.set(bucket, (syllableCounts.get(bucket) ?? 0) + 1);
+  }
+  for (const c of passed) bump(c, false);
+
+  const total = liked.length + passed.length;
+  return {
+    liked: liked.length,
+    passed: passed.length,
+    likeRate: total > 0 ? liked.length / total : null,
+    likedByGender,
+    likedOrigins: [...origins.values()]
+      .filter((o) => o.liked > 0)
+      .sort((a, b) => b.liked - a.liked || a.origin.localeCompare(b.origin))
+      .slice(0, maxOrigins),
+    likedSyllables: SYLLABLE_OPTIONS.map((n) => ({ label: syllableLabel(n), count: syllableCounts.get(n) ?? 0 })),
   };
 }

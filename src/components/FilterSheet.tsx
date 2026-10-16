@@ -1,7 +1,8 @@
 "use client";
 
-import { POPULARITY_BANDS, GENDER_LABEL, type Gender } from "@/lib/types";
+import { SYLLABLE_OPTIONS, syllableLabel } from "@/lib/domain";
 import { useSprout } from "@/lib/store";
+import { GENDER_LABEL, POPULARITY_BANDS, type Gender } from "@/lib/types";
 import { Modal } from "./Modal";
 
 const GENDERS: Gender[] = ["M", "F", "N"];
@@ -12,17 +13,7 @@ function toggle<T>(list: T[], item: T): T[] {
 
 export function FilterSheet() {
   const s = useSprout();
-  const { filters, lengthBounds } = s;
-  const min = filters.lengthMin ?? lengthBounds.min;
-  const max = filters.lengthMax ?? lengthBounds.max;
-  const canSlide = lengthBounds.max > lengthBounds.min;
-
-  // Sliding back to the full range stores null, so names added to the list later are never hidden.
-  const setLength = (lo: number, hi: number) =>
-    s.updateFilters({
-      lengthMin: lo <= lengthBounds.min ? null : lo,
-      lengthMax: hi >= lengthBounds.max ? null : hi,
-    });
+  const { filters } = s;
 
   return (
     <Modal label="Filters" onClose={() => s.setShowFilters(false)}>
@@ -62,37 +53,21 @@ export function FilterSheet() {
         </div>
       )}
 
-      {canSlide && (
-        <div className="filter-section">
-          <div className="small-label">
-            NAME LENGTH: {min}–{max} LETTERS
-          </div>
-          <div className="range">
-            <label className="sr-only" htmlFor="len-min">
-              Shortest name length
-            </label>
-            <input
-              id="len-min"
-              type="range"
-              min={lengthBounds.min}
-              max={lengthBounds.max}
-              value={min}
-              onChange={(e) => setLength(Math.min(Number(e.target.value), max), max)}
-            />
-            <label className="sr-only" htmlFor="len-max">
-              Longest name length
-            </label>
-            <input
-              id="len-max"
-              type="range"
-              min={lengthBounds.min}
-              max={lengthBounds.max}
-              value={max}
-              onChange={(e) => setLength(min, Math.max(Number(e.target.value), min))}
-            />
-          </div>
+      <div className="filter-section">
+        <div className="small-label">SYLLABLES</div>
+        <div className="chips">
+          {SYLLABLE_OPTIONS.map((n) => (
+            <button
+              key={n}
+              className="chip"
+              aria-pressed={filters.syllables.includes(n)}
+              onClick={() => s.updateFilters({ syllables: toggle(filters.syllables, n) })}
+            >
+              {syllableLabel(n)}
+            </button>
+          ))}
         </div>
-      )}
+      </div>
 
       <div className="filter-section">
         <div className="small-label">POPULARITY</div>

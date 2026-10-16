@@ -1,7 +1,14 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  SYLLABLE_OPTIONS,
   canonicalName,
+  computePickStats,
   customNameId,
+  estimateSyllables,
+  gendersFor,
+  genderPrefOf,
+  syllableLabel,
   customToCluster,
   findDuplicate,
   validateCustomName,
@@ -24,6 +31,7 @@ const base: Cluster = {
   etymology: null,
   origins: ["Irish"],
   tier: 1,
+  syllables: 2,
   variants: ["Aiden", "Aidan"],
   nzRank: null,
   nzYear: null,
@@ -44,10 +52,11 @@ describe("filtersMatch", () => {
     expect(filtersMatch({ ...DEFAULT_FILTERS, origins: ["Latin", "Irish"] }, base)).toBe(true);
   });
 
-  it("filters by name length, with null meaning unbounded", () => {
-    expect(filtersMatch({ ...DEFAULT_FILTERS, lengthMin: 6 }, base)).toBe(false);
-    expect(filtersMatch({ ...DEFAULT_FILTERS, lengthMax: 4 }, base)).toBe(false);
-    expect(filtersMatch({ ...DEFAULT_FILTERS, lengthMin: 5, lengthMax: 5 }, base)).toBe(true);
+  it("filters by syllables, where 4 means four or more", () => {
+    expect(filtersMatch({ ...DEFAULT_FILTERS, syllables: [1] }, base)).toBe(false);
+    expect(filtersMatch({ ...DEFAULT_FILTERS, syllables: [1, 2] }, base)).toBe(true);
+    expect(filtersMatch({ ...DEFAULT_FILTERS, syllables: [4] }, c({ syllables: 6 }))).toBe(true);
+    expect(filtersMatch({ ...DEFAULT_FILTERS, syllables: [3] }, c({ syllables: 6 }))).toBe(false);
   });
 
   it("popularity uses NZ rank first, then US rank, and hides unranked names", () => {
@@ -160,5 +169,86 @@ describe("custom names", () => {
     expect(mine.origins).toEqual(["Unknown"]);
     expect(customToCluster({ ...{ id: 9, name: "O", gender: "M" as const, origin: "x", meaning: "", ts: 1 }, addedBy: "u2" }, "u1").addedBy).toBe("partner");
     expect(sortForDeck([c({ id: 1, pop: 0.9 }), mine])[0].id).toBe(9);
+  });
+});
+
+describe("estimateSyllables", () => {
+  it.each([
+    ["Kate", ["English"], 1],
+    ["Aiden", ["Irish"], 2],
+    ["Mia", [], 2],
+    ["Julia", [], 3],
+    ["Olivia", [], 4],
+    ["Isabelle", [], 3],
+    ["Annie", [], 2],
+    ["Maya", [], 2],
+    ["Quinn", [], 1],
+    ["Gabriel", [], 3],
+    ["Luisa", [], 3],
+    ["Maple", [], 2],
+    ["Mary-Ann", [], 3],
+    ["Aroha", ["Māori"], 3],
+    ["Kaitiaki", ["Māori"], 4],
+    ["Tawhirimatea", ["Māori"], 6],
+    ["Wi", ["Māori"], 1],
+  ])("%s (%j) has %i", (name, origins, expected) => {
+    expect(estimateSyllables(name, origins as string[])).toBe(expected);
+  });
+
+  it("agrees with the hand-checked counts in names.json for most of the built-in list", () => {
+    const file = JSON.parse(readFileSync("public/names.json", "utf-8")) as { clusters: Cluster[] };
+    const agree = file.clusters.filter((n) => estimateSyllables(n.name, n.origins) === n.syllables).length;
+    // ~5% were corrected by hand (silent e, Daniel, Leah...); a porting bug would drop this a lot.
+    expect(agree / file.clusters.length).toBeGreaterThan(0.93);
+  });
+});
+
+describe("syllable labels", () => {
+  it("offers 1, 2, 3 and 4+", () => {
+    expect(SYLLABLE_OPTIONS.map(syllableLabel)).toEqual(["1", "2", "3", "4+"]);
+  });
+});
+
+describe("gender preferences from the setup screen", () => {
+  it("maps Boys/Girls (with or without neutral) and Both to the gender filter", () => {
+    expect(gendersFor("boy", true)).toEqual(["M", "N"]);
+    expect(gendersFor("girl", false)).toEqual(["F"]);
+    expect(gendersFor("both", true)).toEqual([]);
+  });
+
+  it("reads a saved filter back into a preference", () => {
+    expect(genderPrefOf({ ...DEFAULT_FILTERS, genders: ["M", "N"] })).toEqual({ pref: "boy", neutral: true });
+    expect(genderPrefOf({ ...DEFAULT_FILTERS, genders: ["F"] })).toEqual({ pref: "girl", neutral: false });
+    expect(genderPrefOf(DEFAULT_FILTERS).pref).toBe("both");
+    expect(genderPrefOf({ ...DEFAULT_FILTERS, genders: ["M", "F"] }).pref).toBe("both");
+  });
+});
+
+describe("computePickStats", () => {
+  const liked = [
+    c({ id: 1, gender: "M", origins: ["Irish"], syllables: 2 }),
+    c({ id: 2, gender: "F", origins: ["Irish"], syllables: 3 }),
+    c({ id: 3, gender: "N", origins: ["Latin"], syllables: 6 }),
+  ];
+  const passed = [c({ id: 4, gender: "F", origins: ["Irish"] }), c({ id: 5, gender: "M", origins: ["Greek"] })];
+
+  it("counts likes by gender, origin and syllables", () => {
+    const st = computePickStats(liked, passed);
+    expect(st.liked).toBe(3);
+    expect(st.passed).toBe(2);
+    expect(st.likeRate).toBeCloseTo(0.6);
+    expect(st.likedByGender).toEqual({ M: 1, F: 1, N: 1 });
+    expect(st.likedOrigins[0]).toEqual({ origin: "Irish", liked: 2, seen: 3 });
+    expect(st.likedOrigins.map((o) => o.origin)).not.toContain("Greek"); // passed only
+    expect(st.likedSyllables).toEqual([
+      { label: "1", count: 0 },
+      { label: "2", count: 1 },
+      { label: "3", count: 1 },
+      { label: "4+", count: 1 },
+    ]);
+  });
+
+  it("copes with no swipes at all", () => {
+    expect(computePickStats([], []).likeRate).toBeNull();
   });
 });
