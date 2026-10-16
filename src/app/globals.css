@@ -135,8 +135,9 @@ h3 {
 .tabbar {
   display: flex;
   border-top: 1px solid var(--border);
-  /* Sit close to the system bar: only reserve what a gesture bar/home indicator really needs. */
-  padding: 4px 4px max(4px, calc(env(safe-area-inset-bottom) - 12px));
+  /* No safe-area padding: without viewport-fit=cover the browser already keeps the page clear of
+     the system bar, and reading the inset anyway left a ~45px gap above Android's nav buttons. */
+  padding: 4px 4px 6px;
   background: var(--bg);
 }
 
