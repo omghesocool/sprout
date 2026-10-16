@@ -65,3 +65,9 @@ export const StarIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.9 6.8 19.7l1-5.9L3.5 9.7l5.9-.8z" />
   </Icon>
 );
+export const ShareIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M12 15V4M8 8l4-4 4 4" />
+    <path d="M5 12v6a2 2 0 002 2h10a2 2 0 002-2v-6" />
+  </Icon>
+);

@@ -12,6 +12,7 @@ import { NameCardContent } from "./NameCardContent";
 import { Pairing } from "./Pairing";
 import { RankingScreen } from "./RankingScreen";
 import { SettingsScreen } from "./SettingsScreen";
+import { ShareSheet } from "./ShareSheet";
 import { Setup } from "./Setup";
 import { SwipeScreen } from "./SwipeScreen";
 
@@ -65,6 +66,7 @@ function Body() {
 
       {s.showFilters && <FilterSheet />}
       {s.showAddName && <AddNameSheet />}
+      {s.shareScope && <ShareSheet />}
       {s.celebration && <Celebration />}
       {s.detail && (
         <Modal label={`${s.detail.name} details`} variant="dialog" onClose={s.closeDetail}>

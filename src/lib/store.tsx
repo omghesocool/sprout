@@ -186,6 +186,11 @@ export interface Sprout {
   pickStats: ReturnType<typeof computePickStats>;
   changeSwipe: (clusterId: number, liked: boolean) => void;
 
+  // sharing a list of names
+  shareScope: "liked" | "matches" | null;
+  openShare: (scope: "liked" | "matches") => void;
+  closeShare: () => void;
+
   // names people add themselves
   showAddName: boolean;
   setShowAddName: (show: boolean) => void;
@@ -229,6 +234,7 @@ export function SproutProvider({ children }: { children: ReactNode }) {
   const [showFilters, setShowFilters] = useState(false);
   const [showAddName, setShowAddName] = useState(false);
   const [setupReopened, setSetupReopened] = useState(false);
+  const [shareScope, setShareScope] = useState<"liked" | "matches" | null>(null);
   const [celebration, setCelebration] = useState<Cluster | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -786,6 +792,9 @@ export function SproutProvider({ children }: { children: ReactNode }) {
     passedList,
     pickStats,
     changeSwipe,
+    shareScope,
+    openShare: setShareScope,
+    closeShare: () => setShareScope(null),
     showAddName,
     setShowAddName,
     addCustomName,

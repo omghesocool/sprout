@@ -327,3 +327,57 @@ export function computePickStats(liked: Cluster[], passed: Cluster[], maxOrigins
     likedSyllables: SYLLABLE_OPTIONS.map((n) => ({ label: syllableLabel(n), count: syllableCounts.get(n) ?? 0 })),
   };
 }
+
+// ---- sharing a list of names ----
+
+export interface ShareTextOptions {
+  title: string;
+  /** Split into Girls / Boys / Gender-neutral sections (ignored when `numbered`). */
+  grouped: boolean;
+  /** Add each name's meaning and origin. */
+  details: boolean;
+  /** Keep the given order and number the lines (used for ranked matches). */
+  numbered: boolean;
+}
+
+function shareLine(c: Cluster, details: boolean): string {
+  const alts = altSpellings(c);
+  let line = alts.length > 0 ? `${c.name} (${alts.join(", ")})` : c.name;
+  if (details) {
+    const origin = displayOrigin(c);
+    const extra = c.meaning && origin ? `${c.meaning} (${origin})` : c.meaning || origin || "";
+    if (extra) line += ` – ${extra}`;
+  }
+  return line;
+}
+
+const SHARE_GROUPS: { gender: Gender; heading: string }[] = [
+  { gender: "F", heading: "👧 Girls" },
+  { gender: "M", heading: "👦 Boys" },
+  { gender: "N", heading: "✨ Gender-neutral" },
+];
+
+/**
+ * Plain text that pastes cleanly into any chat app: emoji headings, "•" bullets, no markdown
+ * (WhatsApp, iMessage and Messenger each treat asterisks and underscores differently).
+ */
+export function formatShareText(names: Cluster[], opts: ShareTextOptions): string {
+  const byName = (a: Cluster, b: Cluster) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+  const lines: string[] = [`${opts.title} (${names.length})`];
+
+  if (opts.numbered) {
+    lines.push("");
+    names.forEach((c, i) => lines.push(`${i + 1}. ${shareLine(c, opts.details)}`));
+  } else if (opts.grouped) {
+    for (const { gender, heading } of SHARE_GROUPS) {
+      const group = names.filter((c) => c.gender === gender).sort(byName);
+      if (group.length === 0) continue;
+      lines.push("", `${heading} (${group.length})`);
+      for (const c of group) lines.push(`• ${shareLine(c, opts.details)}`);
+    }
+  } else {
+    lines.push("");
+    for (const c of [...names].sort(byName)) lines.push(`• ${shareLine(c, opts.details)}`);
+  }
+  return lines.join("\n");
+}

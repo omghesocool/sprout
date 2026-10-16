@@ -1050,3 +1050,28 @@ h3 {
 .dialog > :not(.confetti) {
   position: relative;
 }
+
+/* ---------- sharing ---------- */
+.list-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 20px 0;
+}
+.share-preview {
+  width: 100%;
+  min-height: 180px;
+  max-height: 38dvh;
+  resize: none;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 2px solid var(--border);
+  background: var(--card-alt);
+  color: var(--text);
+  font: inherit;
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+.share-preview:focus {
+  outline: none;
+  border-color: var(--primary);
+}

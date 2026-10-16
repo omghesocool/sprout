@@ -3,6 +3,7 @@
 import { displayOrigin } from "@/lib/domain";
 import { useSprout } from "@/lib/store";
 import { GENDER_LABEL } from "@/lib/types";
+import { ShareIcon } from "./icons";
 import { GenderDot } from "./NameCardContent";
 
 export function MatchesScreen() {
@@ -16,6 +17,11 @@ export function MatchesScreen() {
         <span className="label">
           {count} match{count === 1 ? "" : "es"}
         </span>
+        {count > 0 && (
+          <button className="icon-btn" style={{ marginLeft: "auto" }} onClick={() => s.openShare("matches")} aria-label="Share your matches">
+            <ShareIcon />
+          </button>
+        )}
       </header>
 
       {count === 0 ? (

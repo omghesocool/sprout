@@ -6,6 +6,7 @@ import {
   computePickStats,
   customNameId,
   estimateSyllables,
+  formatShareText,
   gendersFor,
   genderPrefOf,
   syllableLabel,
@@ -250,5 +251,52 @@ describe("computePickStats", () => {
 
   it("copes with no swipes at all", () => {
     expect(computePickStats([], []).likeRate).toBeNull();
+  });
+});
+
+describe("formatShareText", () => {
+  const names = [
+    c({ id: 1, name: "Zoe", gender: "F", origins: ["Greek"], meaning: "life", variants: ["Zoe", "Zoé", "Zoë"] }),
+    c({ id: 2, name: "Aiden", gender: "M", origins: ["Irish"], meaning: "little fire", variants: ["Aiden", "Aidan"] }),
+    c({ id: 3, name: "Ava", gender: "F", origins: ["Unknown"], meaning: "", variants: ["Ava"] }),
+    c({ id: 4, name: "Riley", gender: "N", origins: ["Irish"], meaning: "valiant", variants: ["Riley"] }),
+  ];
+  const opts = { title: "🌱 My liked baby names", grouped: true, details: false, numbered: false };
+
+  it("groups by gender, sorts alphabetically and lists alternate spellings", () => {
+    expect(formatShareText(names, opts)).toBe(
+      [
+        "🌱 My liked baby names (4)",
+        "",
+        "👧 Girls (2)",
+        "• Ava",
+        "• Zoe (Zoé, Zoë)",
+        "",
+        "👦 Boys (1)",
+        "• Aiden (Aidan)",
+        "",
+        "✨ Gender-neutral (1)",
+        "• Riley",
+      ].join("\n"),
+    );
+  });
+
+  it("adds meanings and origins only when asked, skipping what's missing", () => {
+    const text = formatShareText(names, { ...opts, details: true });
+    expect(text).toContain("• Aiden (Aidan) – little fire (Irish)");
+    expect(text).toContain("• Zoe (Zoé, Zoë) – life (Greek)");
+    expect(text).toContain("• Ava\n"); // no meaning and no origin: nothing appended
+  });
+
+  it("can be one flat list, or numbered in the order given (ranked matches)", () => {
+    const flat = formatShareText(names, { ...opts, grouped: false }).split("\n");
+    expect(flat.slice(2)).toEqual(["• Aiden (Aidan)", "• Ava", "• Riley", "• Zoe (Zoé, Zoë)"]);
+
+    const ranked = formatShareText([names[3], names[1]], { ...opts, title: "💛 Baby names we both like", numbered: true });
+    expect(ranked).toBe(["💛 Baby names we both like (2)", "", "1. Riley", "2. Aiden (Aidan)"].join("\n"));
+  });
+
+  it("never uses markdown characters that chat apps render differently", () => {
+    expect(formatShareText(names, { ...opts, details: true })).not.toMatch(/[*_~`#]/);
   });
 });

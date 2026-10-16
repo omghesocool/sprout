@@ -4,6 +4,7 @@ import { useState } from "react";
 import { displayOrigin } from "@/lib/domain";
 import { useSprout } from "@/lib/store";
 import { GENDER_LABEL, type Cluster, type Gender } from "@/lib/types";
+import { ShareIcon } from "./icons";
 import { GenderDot } from "./NameCardContent";
 
 type View = "liked" | "passed" | "stats";
@@ -63,6 +64,13 @@ function NameList({ kind }: { kind: "liked" | "passed" }) {
 
   return (
     <>
+      {kind === "liked" && (
+        <div className="list-actions">
+          <button className="btn secondary" style={{ minHeight: 40, padding: "0 18px" }} onClick={() => s.openShare("liked")}>
+            <ShareIcon width={18} height={18} /> Share list
+          </button>
+        </div>
+      )}
       <ul className="pick-list">
         {list.slice(0, shown).map((c) => (
           <PickRow key={c.id} cluster={c} kind={kind} />
