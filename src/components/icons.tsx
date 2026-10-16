@@ -55,3 +55,8 @@ export const GripIcon = (p: SVGProps<SVGSVGElement>) => (
     {[8, 12, 16].flatMap((y) => [9, 15].map((x) => <circle key={`${x}${y}`} cx={x} cy={y} r="1.4" />))}
   </Icon>
 );
+export const PlusIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon strokeWidth="2.5" {...p}>
+    <path d="M12 5v14M5 12h14" />
+  </Icon>
+);

@@ -1,5 +1,6 @@
 "use client";
 
+import { displayOrigin } from "@/lib/domain";
 import { useSprout } from "@/lib/store";
 import { GENDER_LABEL } from "@/lib/types";
 import { GenderDot } from "./NameCardContent";
@@ -43,7 +44,7 @@ export function MatchesScreen() {
                   <GenderDot gender={c.gender} size={8} />
                   <span className="small-label">{GENDER_LABEL[c.gender]}</span>
                 </span>
-                <span className="small-label">{c.origins[0]?.toUpperCase()}</span>
+                {displayOrigin(c) && <span className="small-label">{displayOrigin(c)!.toUpperCase()}</span>}
               </button>
             </li>
           ))}

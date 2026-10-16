@@ -35,6 +35,34 @@ export function SettingsScreen() {
           </p>
         </section>
 
+        <section className="stack" aria-label="Names you've added">
+          <div className="small-label">NAMES YOU&apos;VE ADDED</div>
+          {s.customList.length === 0 ? (
+            <p className="muted" style={{ margin: 0 }}>
+              Missing a name? Add your own and it goes to the front of both your decks.
+            </p>
+          ) : (
+            <ul className="added-list">
+              {s.customList.map((c) => (
+                <li key={c.id} className="added-item">
+                  <span>
+                    <strong>{c.name}</strong>{" "}
+                    <span className="muted">· {c.addedBy === "me" ? "you" : "your partner"}</span>
+                  </span>
+                  {c.addedBy === "me" && (
+                    <button className="link-btn" onClick={() => s.removeCustomName(c.id)} aria-label={`Remove ${c.name}`}>
+                      Remove
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          <button className="btn secondary" onClick={() => s.setShowAddName(true)}>
+            Add a name
+          </button>
+        </section>
+
         <div className="setting">
           <div>
             <h3>Dark mode</h3>

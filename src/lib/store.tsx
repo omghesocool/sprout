@@ -15,14 +15,19 @@ import {
   DEFAULT_FILTERS,
   cleanCodeInput,
   combineRankings,
+  customNameId,
+  customToCluster,
   filtersMatch,
+  findDuplicate,
+  validateCustomName,
+  type CustomNameInput,
   generateCoupleCode,
   sortForDeck,
   type RankedItem,
 } from "./domain";
 import { ensureSignedIn, isFirebaseConfigured } from "./firebase";
 import * as sync from "./sync";
-import type { Cluster, Filters, NamesFile, SwipeRecord } from "./types";
+import type { Cluster, CustomRecord, Filters, NamesFile, SwipeRecord } from "./types";
 
 export type Tab = "swipe" | "matches" | "ranking" | "settings";
 export type PairingMode = "choose" | "create" | "join";
@@ -41,6 +46,8 @@ interface Persisted {
   filters: Filters;
   dark: boolean | null;
   lastSyncMs: number | null;
+  /** Names the couple typed in, keyed by cluster ID. */
+  customNames: Record<string, CustomRecord>;
 }
 
 const EMPTY: Persisted = {
@@ -53,6 +60,7 @@ const EMPTY: Persisted = {
   filters: DEFAULT_FILTERS,
   dark: null,
   lastSyncMs: null,
+  customNames: {},
 };
 
 function loadPersisted(): Persisted {
@@ -149,6 +157,14 @@ export interface Sprout {
   openDetail: (id: number) => void;
   closeDetail: () => void;
 
+  // names people add themselves
+  showAddName: boolean;
+  setShowAddName: (show: boolean) => void;
+  addCustomName: (input: CustomNameInput & { like: boolean }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  removeCustomName: (id: number) => void;
+  /** Every name either partner has added, newest first. */
+  customList: Cluster[];
+
   // settings
   isDark: boolean;
   toggleDark: () => void;
@@ -180,6 +196,7 @@ export function SproutProvider({ children }: { children: ReactNode }) {
   const [tab, setTab] = useState<Tab>("swipe");
   const [pairing, setPairing] = useState<PairingState>(INITIAL_PAIRING);
   const [showFilters, setShowFilters] = useState(false);
+  const [showAddName, setShowAddName] = useState(false);
   const [celebration, setCelebration] = useState<Cluster | null>(null);
   const [detailId, setDetailId] = useState<number | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -193,7 +210,6 @@ export function SproutProvider({ children }: { children: ReactNode }) {
   const [retryTick, setRetryTick] = useState(0);
 
   const namesRef = useRef<Cluster[] | null>(null);
-  namesRef.current = names;
 
   // ---- boot: local state + names list ----
   useEffect(() => {
@@ -287,6 +303,23 @@ export function SproutProvider({ children }: { children: ReactNode }) {
     };
   }, [coupleId, partnerId, userId]);
 
+  // ---- sync: names either partner has added ----
+  useEffect(() => {
+    if (!coupleId || !userId) return;
+    return sync.watchCustomNames(coupleId, (docs) => {
+      setP((s) => {
+        const remote = new Map(docs.map((d) => [String(d.id), d]));
+        const next: Record<string, CustomRecord> = {};
+        for (const [id, rec] of Object.entries(s.customNames)) {
+          // Keep my own not-yet-uploaded names; anything else missing remotely was removed.
+          if (!remote.has(id) && !rec.synced && rec.addedBy === userId) next[id] = rec;
+        }
+        for (const d of docs) next[String(d.id)] = { ...d, synced: true };
+        return { ...s, customNames: next };
+      });
+    });
+  }, [coupleId, userId]);
+
   // ---- sync: push anything still queued ----
   const flushing = useRef(false);
   const flushUnsynced = useCallback(async () => {
@@ -305,12 +338,26 @@ export function SproutProvider({ children }: { children: ReactNode }) {
           });
         }
       }
+      for (const [id, rec] of Object.entries(pRef.current.customNames)) {
+        if (rec.synced || rec.addedBy !== uid) continue;
+        if (await sync.pushCustomName(code, rec)) {
+          setP((s) => {
+            const current = s.customNames[id];
+            return current ? { ...s, customNames: { ...s.customNames, [id]: { ...current, synced: true } } } : s;
+          });
+        }
+      }
     } finally {
       flushing.current = false;
     }
   }, []);
 
-  const unsyncedCount = useMemo(() => Object.values(p.swipes).filter((s) => !s.synced).length, [p.swipes]);
+  const unsyncedCount = useMemo(
+    () =>
+      Object.values(p.swipes).filter((s) => !s.synced).length +
+      Object.values(p.customNames).filter((c) => !c.synced).length,
+    [p.swipes, p.customNames],
+  );
 
   useEffect(() => {
     if (!userId || !coupleId) return;
@@ -325,18 +372,31 @@ export function SproutProvider({ children }: { children: ReactNode }) {
   }, [userId, coupleId, flushUnsynced]);
 
   // ---- derived data ----
-  const sortedNames = useMemo(() => (names ? sortForDeck(names) : []), [names]);
-  const byId = useMemo(() => new Map((names ?? []).map((c) => [c.id, c])), [names]);
+  const customList = useMemo(
+    () =>
+      Object.values(p.customNames)
+        .sort((a, b) => b.ts - a.ts)
+        .map((c) => customToCluster(c, userId)),
+    [p.customNames, userId],
+  );
+  const allNames = useMemo(() => (names ? [...names, ...customList] : null), [names, customList]);
+  namesRef.current = allNames;
+
+  const sortedNames = useMemo(() => (allNames ? sortForDeck(allNames) : []), [allNames]);
+  const byId = useMemo(() => new Map((allNames ?? []).map((c) => [c.id, c])), [allNames]);
 
   const allOrigins = useMemo(
-    () => [...new Set((names ?? []).flatMap((c) => c.origins))].sort((a, b) => a.localeCompare(b)),
-    [names],
+    () => [...new Set((allNames ?? []).flatMap((c) => c.origins))].sort((a, b) => a.localeCompare(b)),
+    [allNames],
   );
   const lengthBounds = useMemo(() => {
-    const lengths = (names ?? []).map((c) => c.name.length);
+    const lengths = (allNames ?? []).map((c) => c.name.length);
     return lengths.length ? { min: Math.min(...lengths), max: Math.max(...lengths) } : { min: 2, max: 12 };
-  }, [names]);
-  const maxTier = useMemo(() => Math.max(p.unlockedTier, ...(names ?? []).map((c) => c.tier), 1), [names, p.unlockedTier]);
+  }, [allNames]);
+  const maxTier = useMemo(
+    () => Math.max(p.unlockedTier, ...(allNames ?? []).map((c) => c.tier), 1),
+    [allNames, p.unlockedTier],
+  );
 
   const { deck, totalAllowed, allowedForTierCount, nextTierCount } = useMemo(() => {
     const allowed = sortedNames.filter((c) => c.tier <= p.unlockedTier);
@@ -435,6 +495,57 @@ export function SproutProvider({ children }: { children: ReactNode }) {
     setP((s) => ({ ...s, myRanking: orderedIds }));
     const uid = userIdRef.current;
     if (uid && cur.coupleId) void sync.pushRanking(cur.coupleId, uid, orderedIds);
+  }, []);
+
+  const addCustomName = useCallback(
+    async (input: CustomNameInput & { like: boolean }) => {
+      const invalid = validateCustomName(input);
+      if (invalid) return { ok: false as const, error: invalid };
+      const gender = input.gender!;
+      const name = input.name.trim().replace(/\s+/g, " ");
+      const uid = userIdRef.current;
+      const code = pRef.current.coupleId;
+      if (!uid || !code) {
+        return { ok: false as const, error: "Connect to the internet once first, so your partner gets this name too." };
+      }
+      const dup = findDuplicate(namesRef.current ?? [], name, gender);
+      if (dup) return { ok: false as const, error: `${dup.name} is already in the list.` };
+
+      const id = await customNameId(gender, name);
+      const record: CustomRecord = {
+        id,
+        name,
+        gender,
+        origin: input.origin.trim(),
+        meaning: input.meaning.trim(),
+        addedBy: uid,
+        ts: Date.now(),
+        synced: false,
+      };
+      setP((s) => ({ ...s, customNames: { ...s.customNames, [id]: record } }));
+      if (input.like) swipe(id, true);
+      setToast(`Added ${name}`);
+      void sync.pushCustomName(code, record).then((ok) => {
+        if (!ok) return;
+        setP((s) => {
+          const current = s.customNames[id];
+          return current ? { ...s, customNames: { ...s.customNames, [id]: { ...current, synced: true } } } : s;
+        });
+      });
+      return { ok: true as const };
+    },
+    [swipe],
+  );
+
+  const removeCustomName = useCallback((id: number) => {
+    const cur = pRef.current;
+    const rec = cur.customNames[String(id)];
+    if (!rec || rec.addedBy !== userIdRef.current || !cur.coupleId) return; // only whoever added it
+    setP((s) => {
+      const { [String(id)]: _gone, ...rest } = s.customNames;
+      return { ...s, customNames: rest };
+    });
+    void sync.deleteCustomName(cur.coupleId, id);
   }, []);
 
   const unlockNextTier = useCallback(() => setP((s) => ({ ...s, unlockedTier: s.unlockedTier + 1 })), []);
@@ -548,6 +659,11 @@ export function SproutProvider({ children }: { children: ReactNode }) {
     detail: detailId !== null ? (byId.get(detailId) ?? null) : null,
     openDetail: setDetailId,
     closeDetail: () => setDetailId(null),
+    showAddName,
+    setShowAddName,
+    addCustomName,
+    removeCustomName,
+    customList,
     isDark,
     toggleDark,
     leavePairing,

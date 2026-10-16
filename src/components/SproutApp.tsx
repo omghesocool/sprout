@@ -1,6 +1,7 @@
 "use client";
 
 import { SproutProvider, useSprout, type Tab } from "@/lib/store";
+import { AddNameSheet } from "./AddNameSheet";
 import { FilterSheet } from "./FilterSheet";
 import { GridIcon, HeartIcon, ListIcon, SettingsIcon } from "./icons";
 import { MatchesScreen } from "./MatchesScreen";
@@ -58,6 +59,7 @@ function Body() {
       <TabBar />
 
       {s.showFilters && <FilterSheet />}
+      {s.showAddName && <AddNameSheet />}
       {s.celebration && <Celebration />}
       {s.detail && (
         <Modal label={`${s.detail.name} details`} variant="dialog" onClose={s.closeDetail}>

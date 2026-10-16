@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef } from "react";
 import { useSprout } from "@/lib/store";
 import type { Cluster } from "@/lib/types";
-import { CloseIcon, HeartIcon, TuneIcon, UndoIcon } from "./icons";
+import { CloseIcon, HeartIcon, PlusIcon, TuneIcon, UndoIcon } from "./icons";
 import { NameCardContent } from "./NameCardContent";
 
 const FLING_DISTANCE = 110;
@@ -35,10 +35,10 @@ export function SwipeScreen() {
     [top, swipe],
   );
 
-  const { showFilters, celebration, detail, canUndo, undo } = s;
+  const { showFilters, showAddName, celebration, detail, canUndo, undo } = s;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (showFilters || celebration || detail) return;
+      if (showFilters || showAddName || celebration || detail) return;
       const target = e.target as HTMLElement | null;
       if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
       if (e.key === "ArrowRight") fling(true);
@@ -47,15 +47,20 @@ export function SwipeScreen() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [fling, showFilters, celebration, detail, canUndo, undo]);
+  }, [fling, showFilters, showAddName, celebration, detail, canUndo, undo]);
 
   return (
     <>
       <header className="topbar">
         <span className="wordmark">🌱 Sprout</span>
-        <button className="icon-btn" onClick={() => s.setShowFilters(true)} aria-label="Filters">
-          <TuneIcon />
-        </button>
+        <span className="row" style={{ gap: 0 }}>
+          <button className="icon-btn" onClick={() => s.setShowAddName(true)} aria-label="Add a name">
+            <PlusIcon />
+          </button>
+          <button className="icon-btn" onClick={() => s.setShowFilters(true)} aria-label="Filters">
+            <TuneIcon />
+          </button>
+        </span>
       </header>
 
       {top ? (

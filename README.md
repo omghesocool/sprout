@@ -28,6 +28,21 @@ six-character couple code.
 
 `names.json` is the only thing that changes when you change names; no code edits.
 
+## Adding your own names
+
+Either partner can tap **+** on the Swipe screen (or *Add a name* in Settings) to type in a
+name that isn't on the list: name, gender, and optionally origin and meaning. It goes to the
+**front of both decks**, shows an "Added by you / your partner" tag, and can be added to your
+likes straight away. Only whoever added a name can remove it (Settings → Names you've added).
+
+- Names are stored in Firestore under `couples/{code}/customNames`, so both partners get them.
+  **This needs the updated `firestore.rules` deployed once** (see setup step 1 below). Until then
+  adding a name works on your device but won't reach your partner (Settings shows it as
+  "waiting to sync").
+- Duplicates are blocked by spelling, listed variant and accent (adding "Zoë" when "Zoe" exists
+  is refused); a neutral card blocks the same name as Boy or Girl, and vice versa.
+- The Android app doesn't know about these names, so they only appear in the web app.
+
 ## One-time setup
 
 ### 1. Firebase web app (the part only you can do)
@@ -46,8 +61,10 @@ config. In the [Firebase console](https://console.firebase.google.com), project
    (e.g. `sprout-web.vercel.app`, plus any custom domain). Without this, sign-in
    fails on the deployed site even though it works on `localhost`.
 
-No Firestore rules change is needed; the existing `firestore.rules` already covers
-this client. These config values are public identifiers, not secrets — access is
+Deploy the updated security rules once, from `../babynames-android` (needs the
+[Firebase CLI](https://firebase.google.com/docs/cli) and `firebase login`):
+`firebase deploy --only firestore:rules`. The new rules only add the `customNames` collection;
+everything else is unchanged, so the Android app keeps working. These config values are public identifiers, not secrets — access is
 controlled by the rules, not by hiding the key.
 
 ### 2. Run locally

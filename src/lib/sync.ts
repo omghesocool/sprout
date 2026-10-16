@@ -10,6 +10,7 @@ import {
   type Unsubscribe,
 } from "firebase/firestore";
 import { db } from "./firebase";
+import type { CustomName } from "./types";
 
 /**
  * Firestore layout, shared with the Android app (see babynames-android/firestore.rules):
@@ -115,5 +116,64 @@ export function watchPartnerRanking(code: string, partnerId: string, cb: (order:
       cb(Array.isArray(order) ? order.filter((n): n is number => typeof n === "number") : []);
     },
     (err) => console.warn("partner ranking listener error", err),
+  );
+}
+
+// ---- names added by the couple: couples/{code}/customNames/{id} ----
+
+export async function pushCustomName(code: string, c: CustomName): Promise<boolean> {
+  try {
+    await setDoc(doc(db(), `${couple(code)}/customNames/${c.id}`), {
+      id: c.id,
+      name: c.name,
+      gender: c.gender,
+      origin: c.origin,
+      meaning: c.meaning,
+      addedBy: c.addedBy,
+      ts: c.ts,
+    });
+    return true;
+  } catch (err) {
+    console.warn("pushCustomName failed, will retry", err);
+    return false;
+  }
+}
+
+export async function deleteCustomName(code: string, id: number): Promise<void> {
+  try {
+    await deleteDoc(doc(db(), `${couple(code)}/customNames/${id}`));
+  } catch (err) {
+    console.warn("deleteCustomName failed", err);
+  }
+}
+
+/** Live list of every name either partner has added. */
+export function watchCustomNames(code: string, cb: (names: CustomName[]) => void): Unsubscribe {
+  return onSnapshot(
+    collection(db(), `${couple(code)}/customNames`),
+    (snap) => {
+      const names: CustomName[] = [];
+      for (const d of snap.docs) {
+        const x = d.data();
+        if (
+          typeof x.id === "number" &&
+          typeof x.name === "string" &&
+          (x.gender === "M" || x.gender === "F" || x.gender === "N") &&
+          typeof x.addedBy === "string"
+        ) {
+          names.push({
+            id: x.id,
+            name: x.name,
+            gender: x.gender,
+            origin: typeof x.origin === "string" ? x.origin : "",
+            meaning: typeof x.meaning === "string" ? x.meaning : "",
+            addedBy: x.addedBy,
+            ts: typeof x.ts === "number" ? x.ts : 0,
+          });
+        }
+      }
+      cb(names);
+    },
+    (err) => console.warn("custom names listener error", err),
   );
 }

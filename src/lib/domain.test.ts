@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  canonicalName,
+  customNameId,
+  customToCluster,
+  findDuplicate,
+  validateCustomName,
   DEFAULT_FILTERS,
   cleanCodeInput,
   combineRankings,
@@ -107,5 +112,53 @@ describe("couple codes", () => {
 
   it("cleans typed input", () => {
     expect(cleanCodeInput(" ab-c d3ef9 ")).toBe("ABCD3E");
+  });
+});
+
+describe("custom names", () => {
+  const list = [
+    c({ id: 1, name: "Aidan", gender: "M", variants: ["Aidan", "Aiden"] }),
+    c({ id: 2, name: "Riley", gender: "N", variants: ["Riley"] }),
+    c({ id: 3, name: "Zoe", gender: "F", variants: ["Zoe", "Zoë"] }),
+  ];
+
+  it("canonicalName ignores case, accents and spacing", () => {
+    expect(canonicalName("  Zoë ")).toBe("zoe");
+    expect(canonicalName("ANNE  marie")).toBe("anne marie");
+  });
+
+  it("validates input", () => {
+    const ok = { name: "Oakley", gender: "M" as const, origin: "", meaning: "" };
+    expect(validateCustomName(ok)).toBeNull();
+    expect(validateCustomName({ ...ok, name: "  " })).toMatch(/name/i);
+    expect(validateCustomName({ ...ok, name: "R2D2" })).toMatch(/letters/i);
+    expect(validateCustomName({ ...ok, name: "Mary-Anne O'Neil" })).toBeNull();
+    expect(validateCustomName({ ...ok, gender: null })).toMatch(/gender|boy/i);
+    expect(validateCustomName({ ...ok, meaning: "x".repeat(121) })).toMatch(/meaning/i);
+  });
+
+  it("finds duplicates by spelling, variant and accent, respecting gender", () => {
+    expect(findDuplicate(list, "aiden", "M")?.id).toBe(1); // a listed variant
+    expect(findDuplicate(list, "Aidan", "F")).toBeUndefined(); // different gender is allowed
+    expect(findDuplicate(list, "Riley", "F")?.id).toBe(2); // neutral card blocks either gender
+    expect(findDuplicate(list, "Zoë", "F")?.id).toBe(3);
+    expect(findDuplicate(list, "Zoe", "N")?.id).toBe(3); // adding neutral over an existing one
+    expect(findDuplicate(list, "Oakley", "M")).toBeUndefined();
+  });
+
+  it("gives the same ID for the same name and a safe integer", async () => {
+    const a = await customNameId("M", "Oakley");
+    expect(await customNameId("M", "  oakley ")).toBe(a);
+    expect(await customNameId("F", "Oakley")).not.toBe(a);
+    expect(Number.isSafeInteger(a)).toBe(true);
+    expect(a).toBeGreaterThanOrEqual(0);
+  });
+
+  it("builds a deck card that sorts first and records who added it", () => {
+    const mine = customToCluster({ id: 9, name: "Oakley", gender: "M", origin: "", meaning: "", addedBy: "u1", ts: 1 }, "u1");
+    expect(mine.addedBy).toBe("me");
+    expect(mine.origins).toEqual(["Unknown"]);
+    expect(customToCluster({ ...{ id: 9, name: "O", gender: "M" as const, origin: "x", meaning: "", ts: 1 }, addedBy: "u2" }, "u1").addedBy).toBe("partner");
+    expect(sortForDeck([c({ id: 1, pop: 0.9 }), mine])[0].id).toBe(9);
   });
 });

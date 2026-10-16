@@ -21,6 +21,8 @@ export interface Cluster {
   nzYear: number | null;
   usRank: number | null;
   pop: number;
+  /** Set only on names a user typed in themselves. */
+  addedBy?: "me" | "partner";
 }
 
 export interface NamesFile {
@@ -52,5 +54,22 @@ export interface SwipeRecord {
   liked: boolean;
   ts: number;
   /** False until the Firestore write for this swipe has succeeded. */
+  synced: boolean;
+}
+
+/** A name someone in the couple added themselves. Stored in Firestore so both partners see it. */
+export interface CustomName {
+  id: number;
+  name: string;
+  gender: Gender;
+  origin: string;
+  meaning: string;
+  /** Firebase uid of whoever added it; only they can remove it. */
+  addedBy: string;
+  ts: number;
+}
+
+/** A custom name as kept on this device; `synced` is false until Firestore has it. */
+export interface CustomRecord extends CustomName {
   synced: boolean;
 }

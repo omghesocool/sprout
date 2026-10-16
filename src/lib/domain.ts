@@ -1,4 +1,4 @@
-import { type Cluster, type Filters, POPULARITY_BANDS } from "./types";
+import { type Cluster, type CustomName, type Filters, type Gender, POPULARITY_BANDS } from "./types";
 
 export const DEFAULT_FILTERS: Filters = {
   genders: [],
@@ -12,6 +12,12 @@ export function popularityLabel(c: Cluster): string | null {
   if (c.nzRank != null && c.nzYear != null) return `NZ #${c.nzRank} in ${c.nzYear}`;
   if (c.usRank != null) return `US #${c.usRank}`;
   return null;
+}
+
+/** The primary origin to print, or null when the list doesn't say. */
+export function displayOrigin(c: Cluster): string | null {
+  const o = c.origins[0];
+  return o && o !== "Unknown" ? o : null;
 }
 
 export function altSpellings(c: Cluster): string[] {
@@ -107,4 +113,80 @@ export function generateCoupleCode(random: (n: number) => number = (n) => Math.f
 
 export function cleanCodeInput(text: string): string {
   return text.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, CODE_LENGTH);
+}
+
+// ---- names people add themselves ----
+
+export const MAX_NAME_LENGTH = 30;
+export const MAX_ORIGIN_LENGTH = 30;
+export const MAX_MEANING_LENGTH = 120;
+
+/** Case-, accent- and spacing-insensitive form used to spot duplicates. */
+export function canonicalName(name: string): string {
+  return name
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLocaleLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export interface CustomNameInput {
+  name: string;
+  gender: Gender | null;
+  origin: string;
+  meaning: string;
+}
+
+/** Returns an error message, or null if the input is fine. */
+export function validateCustomName(input: CustomNameInput): string | null {
+  const name = input.name.trim();
+  if (!name) return "Type a name first.";
+  if (name.length > MAX_NAME_LENGTH) return `Names can be up to ${MAX_NAME_LENGTH} letters.`;
+  if (!/^\p{L}[\p{L}\p{M}'’ -]*$/u.test(name)) return "Names can only use letters, spaces, hyphens and apostrophes.";
+  if (!input.gender) return "Pick Boy, Girl or Gender-neutral.";
+  if (input.origin.trim().length > MAX_ORIGIN_LENGTH) return `Origin can be up to ${MAX_ORIGIN_LENGTH} characters.`;
+  if (input.meaning.trim().length > MAX_MEANING_LENGTH) return `Meaning can be up to ${MAX_MEANING_LENGTH} characters.`;
+  return null;
+}
+
+/**
+ * The existing card this name would collide with, if any: same spelling (or listed as a variant)
+ * in the same gender, or in a neutral card either way round.
+ */
+export function findDuplicate(existing: Cluster[], name: string, gender: Gender): Cluster | undefined {
+  const key = canonicalName(name);
+  return existing.find(
+    (c) =>
+      (c.gender === gender || c.gender === "N" || gender === "N") &&
+      (canonicalName(c.name) === key || c.variants.some((v) => canonicalName(v) === key)),
+  );
+}
+
+/** Stable 53-bit ID (safe as a JS number and a Firestore integer) derived from the name, so both
+ * partners adding the same name land on the same card. The "custom:" prefix keeps these away from
+ * the IDs the names pipeline hashes for the built-in list. */
+export async function customNameId(gender: Gender, name: string): Promise<number> {
+  const bytes = new TextEncoder().encode(`custom:${gender}:${canonicalName(name)}`);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Number(new DataView(digest).getBigUint64(0) & ((1n << 53n) - 1n));
+}
+
+/** Custom names come first in the deck: someone went to the trouble of typing them in. */
+export function customToCluster(c: CustomName, myUid: string | null): Cluster {
+  return {
+    id: c.id,
+    name: c.name,
+    gender: c.gender,
+    meaning: c.meaning,
+    etymology: null,
+    origins: [c.origin || "Unknown"],
+    tier: 1,
+    variants: [c.name],
+    nzRank: null,
+    nzYear: null,
+    usRank: null,
+    pop: 1,
+    addedBy: c.addedBy === myUid ? "me" : "partner",
+  };
 }
